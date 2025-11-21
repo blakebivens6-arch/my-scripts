@@ -1,9 +1,9 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local SAFEZONE_WAIT = 5       -- Seconds to wait at SafeZone after chest
-local PRELOAD_WAIT = 15       -- Seconds to wait after loading save data
-local SCAN_INTERVAL = 0.5     -- How often to scan for new chests
+local SAFEZONE_WAIT = 5       -- Wait at SafeZone after each chest
+local PRELOAD_WAIT = 25       -- Wait after loading save data before chest loop
+local SCAN_INTERVAL = 0.5     -- How often to scan for chests
 local MAX_CHEST_RUNS = 10     -- Server hop after this many chests
 local SAVE_LOAD_REPEAT = 2    -- Number of times to run LoadData
 local SAVE_LOAD_WAIT = 5      -- Seconds to wait between LoadData calls
@@ -19,6 +19,29 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local root = character:WaitForChild("HumanoidRootPart")
+
+--------------------------------------------------------
+-- SAFEZONE
+--------------------------------------------------------
+local safeZone = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
+
+local function getAnyPart(obj)
+    if not obj then return nil end
+    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then return obj.PrimaryPart end
+        for _, child in ipairs(obj:GetDescendants()) do
+            if child:IsA("BasePart") then return child end
+        end
+    end
+end
+
+local function teleportToSafeZone()
+    local part = getAnyPart(safeZone)
+    if part then
+        root.CFrame = part.CFrame
+    end
+end
 
 --------------------------------------------------------
 -- SERVER HOP FUNCTION
@@ -43,7 +66,7 @@ local function serverHop()
     end
 
     if #goodServers > 0 then
-        TeleportService:TeleportToPlaceInstance(placeId, goodServers[math.random(1, #goodServers)], player)
+        TeleportService:TeleportToPlaceInstance(placeId, goodServers[math.random(1,#goodServers)], player)
     else
         TeleportService:Teleport(placeId, player)
     end
@@ -61,20 +84,6 @@ local function loadSaveData()
             remote:InvokeServer(unpack(args))
         end)
         task.wait(SAVE_LOAD_WAIT)
-    end
-end
-
---------------------------------------------------------
--- GET ANY PART FROM MODEL OR PART
---------------------------------------------------------
-local function getAnyPart(obj)
-    if not obj then return nil end
-    if obj:IsA("BasePart") then return obj end
-    if obj:IsA("Model") then
-        if obj.PrimaryPart then return obj.PrimaryPart end
-        for _, child in ipairs(obj:GetDescendants()) do
-            if child:IsA("BasePart") then return child end
-        end
     end
 end
 
@@ -102,7 +111,7 @@ end
 --------------------------------------------------------
 -- OPEN CHEST
 --------------------------------------------------------
-local function openChest(chest, safeZone)
+local function openChest(chest)
     local body = chest:FindFirstChild("Body")
     local prompt = chest:FindFirstChild("ProximityPrompt")
     if not (body and prompt) then return end
@@ -115,7 +124,6 @@ local function openChest(chest, safeZone)
     end)
 
     deposit()
-
     instantTP(safeZone)
     task.wait(SAFEZONE_WAIT)
 end
@@ -124,7 +132,6 @@ end
 -- MAIN CHEST LOOP
 --------------------------------------------------------
 local function startChestLoop()
-    local safeZone = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
     local chestRuns = 0
 
     while task.wait() do
@@ -147,8 +154,8 @@ local function startChestLoop()
             break
         end
 
-        local chosen = chests[math.random(1, #chests)]
-        openChest(chosen, safeZone)
+        local chosen = chests[math.random(1,#chests)]
+        openChest(chosen)
 
         chestRuns += 1
         if chestRuns >= MAX_CHEST_RUNS then
@@ -162,11 +169,14 @@ end
 --------------------------------------------------------
 -- SCRIPT EXECUTION
 --------------------------------------------------------
--- 1️⃣ Immediately load save data
+-- 1️⃣ Load save data immediately
 loadSaveData()
 
--- 2️⃣ Wait 15 seconds before starting chest loop
+-- 2️⃣ Wait 15 seconds before starting chest farm
 task.wait(PRELOAD_WAIT)
 
--- 3️⃣ Start the chest farming loop
+-- 3️⃣ Teleport to SafeZone to ensure correct start
+teleportToSafeZone()
+
+-- 4️⃣ Start chest farming loop
 startChestLoop()
