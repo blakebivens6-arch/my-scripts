@@ -1,13 +1,11 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local SAFEZONE_WAIT = 5           -- Wait at SafeZone after each chest
-local SCAN_INTERVAL = 0.5         -- How often to scan for chests
-local MAX_CHEST_RUNS = 10         -- Server hop after this many chests
-local SAVE_LOAD_REPEAT = 2        -- Number of times to run LoadData
-local SAVE_LOAD_WAIT = 5          -- Seconds to wait between LoadData calls
-local LOAD_CHECK_TIME = 3         -- Seconds player must remain at SafeZone
-local CAMERA_CHECK_INTERVAL = 0.5 -- Interval to check camera
+local SAFEZONE_WAIT = 5        -- Wait at SafeZone after each chest
+local SCAN_INTERVAL = 0.5      -- How often to scan for chests
+local MAX_CHEST_RUNS = 10      -- Server hop after this many chests
+local SAVE_LOAD_REPEAT = 2     -- Number of times to run LoadData
+local SAVE_LOAD_WAIT = 5       -- Seconds to wait between LoadData calls
 
 --------------------------------------------------------
 -- SERVICES
@@ -16,19 +14,17 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local root = character:WaitForChild("HumanoidRootPart")
-local cam = workspace.CurrentCamera
 
---------------------------------------------------------
--- SAFEZONE
---------------------------------------------------------
 local safeZone = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
 
+--------------------------------------------------------
+-- HELPERS
+--------------------------------------------------------
 local function getAnyPart(obj)
     if not obj then return nil end
     if obj:IsA("BasePart") then return obj end
@@ -40,11 +36,17 @@ local function getAnyPart(obj)
     end
 end
 
-local function teleportToSafeZone()
-    local part = getAnyPart(safeZone)
+local function instantTP(target)
+    local part = getAnyPart(target)
     if part then
         root.CFrame = part.CFrame
+        return true
     end
+    return false
+end
+
+local function teleportToSafeZone()
+    instantTP(safeZone)
 end
 
 --------------------------------------------------------
@@ -63,40 +65,65 @@ local function loadSaveData()
 end
 
 --------------------------------------------------------
--- CHECK LOADED FUNCTION
+-- CHECK GAME LOADED
 --------------------------------------------------------
 local function checkLoaded()
-    local part = getAnyPart(safeZone)
-    if not part then return end
+    while true do
+        local success = false
+        -- Try Settings remote
+        pcall(function()
+            local settings = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Settings")
+            settings:FireServer()
+            success = true
+        end)
+        if success then break end
 
-    teleportToSafeZone()
-    task.wait(0.5) -- let physics settle
+        -- Try Block remote
+        pcall(function()
+            local block = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Block")
+            local args = {[1] = false}
+            block:FireServer(unpack(args))
+            success = true
+        end)
+        if success then break end
 
-    local stableTime = 0
-    local lastPos = root.Position
-
-    while stableTime < LOAD_CHECK_TIME do
-        task.wait(CAMERA_CHECK_INTERVAL)
-
-        local dist = (root.Position - lastPos).Magnitude
-        local camPosValid = cam.CFrame.Position.Y > 0 -- simple check, can adjust
-
-        if dist > 0.5 or not camPosValid then
-            -- player moved or camera not valid, reset counter
-            stableTime = 0
-            teleportToSafeZone()
-        else
-            stableTime = stableTime + CAMERA_CHECK_INTERVAL
-        end
-
-        lastPos = root.Position
+        task.wait(0.5) -- retry interval
     end
 
-    print("Load check passed. Player and camera stable at SafeZone.")
+    print("✅ Game loaded detected. Starting chest farm...")
 end
 
 --------------------------------------------------------
--- SERVER HOP FUNCTION
+-- BANK DEPOSIT
+--------------------------------------------------------
+local function deposit()
+    local args = {[1]=true,[2]=1}
+    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Bank")
+    remote:InvokeServer(unpack(args))
+end
+
+--------------------------------------------------------
+-- OPEN CHEST
+--------------------------------------------------------
+local function openChest(chest)
+    local body = chest:FindFirstChild("Body")
+    local prompt = chest:FindFirstChild("ProximityPrompt")
+    if not (body and prompt) then return end
+
+    instantTP(body)
+    task.wait(0.2)
+
+    pcall(function()
+        fireproximityprompt(prompt, 1)
+    end)
+
+    deposit()
+    teleportToSafeZone()
+    task.wait(SAFEZONE_WAIT)
+end
+
+--------------------------------------------------------
+-- SERVER HOP
 --------------------------------------------------------
 local function serverHop()
     print("Server hopping...")
@@ -125,48 +152,7 @@ local function serverHop()
 end
 
 --------------------------------------------------------
--- INSTANT TELEPORT
---------------------------------------------------------
-local function instantTP(target)
-    local part = getAnyPart(target)
-    if part then
-        root.CFrame = part.CFrame
-        return true
-    end
-    return false
-end
-
---------------------------------------------------------
--- BANK REMOTE
---------------------------------------------------------
-local function deposit()
-    local args = {[1]=true,[2]=1}
-    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Bank")
-    remote:InvokeServer(unpack(args))
-end
-
---------------------------------------------------------
--- OPEN CHEST
---------------------------------------------------------
-local function openChest(chest)
-    local body = chest:FindFirstChild("Body")
-    local prompt = chest:FindFirstChild("ProximityPrompt")
-    if not (body and prompt) then return end
-
-    instantTP(body)
-    task.wait(0.2)
-
-    pcall(function()
-        fireproximityprompt(prompt, 1)
-    end)
-
-    deposit()
-    instantTP(safeZone)
-    task.wait(SAFEZONE_WAIT)
-end
-
---------------------------------------------------------
--- MAIN CHEST LOOP
+-- CHEST FARM LOOP
 --------------------------------------------------------
 local function startChestLoop()
     local chestRuns = 0
@@ -186,7 +172,7 @@ local function startChestLoop()
         end
 
         if #chests == 0 then
-            print("No chests left — hopping server.")
+            print("No chests found — hopping server.")
             serverHop()
             break
         end
@@ -206,11 +192,6 @@ end
 --------------------------------------------------------
 -- SCRIPT EXECUTION
 --------------------------------------------------------
--- 1️⃣ Load save data
-loadSaveData()
-
--- 2️⃣ Wait until player & camera are stable at SafeZone
-checkLoaded()
-
--- 3️⃣ Start chest farming loop
-startChestLoop()
+loadSaveData()   -- Load player save data
+checkLoaded()    -- Wait until game is loaded (either remote works)
+startChestLoop() -- Begin farming chests
