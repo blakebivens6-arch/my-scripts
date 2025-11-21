@@ -1,8 +1,8 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local WAIT_BETWEEN_CHESTS = 5     -- 5 seconds between TELEPORTS
-local SCAN_INTERVAL = 0.5         -- How often we re-scan for new chests
+local WAIT_BETWEEN_CHESTS = 5  -- Time in seconds between teleports
+local SCAN_INTERVAL = 0.5      -- Time between chest folder scans
 
 --------------------------------------------------------
 -- PLAYER SETUP
@@ -12,12 +12,12 @@ local character = player.Character or player.CharacterAdded:Wait()
 local root = character:WaitForChild("HumanoidRootPart")
 
 --------------------------------------------------------
--- SAFE TELEPORT (ANTI-KICK)
+-- SAFE TELEPORT FUNCTION
 --------------------------------------------------------
 local function safeTP(cf)
     local startPos = root.Position
     local endPos = cf.Position
-    local steps = 15
+    local steps = 12
     local delta = (endPos - startPos) / steps
 
     for i = 1, steps do
@@ -27,7 +27,7 @@ local function safeTP(cf)
 end
 
 --------------------------------------------------------
--- GET REAL PART (IF Body IS A MODEL)
+-- GET REAL PART OF BODY
 --------------------------------------------------------
 local function getBodyPart(body)
     if not body then return nil end
@@ -37,9 +37,7 @@ local function getBodyPart(body)
     end
 
     if body:IsA("Model") then
-        if body.PrimaryPart then
-            return body.PrimaryPart
-        end
+        if body.PrimaryPart then return body.PrimaryPart end
         for _, obj in ipairs(body:GetChildren()) do
             if obj:IsA("BasePart") then
                 return obj
@@ -51,19 +49,19 @@ local function getBodyPart(body)
 end
 
 --------------------------------------------------------
--- RUN BANK REMOTE
+-- BANK REMOTE CALL
 --------------------------------------------------------
 local function deposit()
     local args = {
         [1] = true,
         [2] = 1
     }
-    local remote = game.ReplicatedStorage.Remotes.Bank
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Bank")
     remote:InvokeServer(unpack(args))
 end
 
 --------------------------------------------------------
--- OPEN ONE CHEST (TP → PROMPT → BANK → WAIT)
+-- OPEN ONE CHEST
 --------------------------------------------------------
 local function openChest(chest)
     local body = getBodyPart(chest:FindFirstChild("Body"))
@@ -73,48 +71,48 @@ local function openChest(chest)
         return false
     end
 
-    ----------------------------------------------------
-    -- TELEPORT EXACTLY ONTO BODY (ONE TP ONLY)
-    ----------------------------------------------------
+    -- ONE TELEPORT directly to the body
     safeTP(body.CFrame)
 
-    task.wait(0.2)
+    task.wait(0.2) -- small buffer before prompt
 
-    ----------------------------------------------------
-    -- ACTIVATE PROXIMITY PROMPT
-    ----------------------------------------------------
+    -- ACTIVATE THE PROXIMITY PROMPT
     pcall(function()
         fireproximityprompt(prompt, 1)
     end)
 
-    ----------------------------------------------------
-    -- DEPOSIT
-    ----------------------------------------------------
+    -- DEPOSIT TO BANK
     deposit()
 
-    ----------------------------------------------------
-    -- WAIT 5 SECONDS BEFORE THE NEXT CHEST
-    ----------------------------------------------------
+    -- WAIT BEFORE NEXT TELEPORT
     task.wait(WAIT_BETWEEN_CHESTS)
 
     return true
 end
 
 --------------------------------------------------------
--- MAIN LOOP (ONE CHEST → WAIT → NEXT)
+-- MAIN LOOP: RANDOM CHEST EACH ITERATION
 --------------------------------------------------------
 while true do
     local chestFolder = workspace:FindFirstChild("Chests")
+    if not chestFolder then
+        task.wait(SCAN_INTERVAL)
+        continue
+    end
 
-    if chestFolder then
-        local chestList = chestFolder:GetChildren()
-
-        for _, chest in ipairs(chestList) do
-            if chest:FindFirstChild("Body") and chest:FindFirstChild("ProximityPrompt") then
-                openChest(chest)   -- << ONE CHEST ONLY
-            end
+    -- Collect all valid chests
+    local validChests = {}
+    for _, chest in ipairs(chestFolder:GetChildren()) do
+        if chest:FindFirstChild("Body") and chest:FindFirstChild("ProximityPrompt") then
+            table.insert(validChests, chest)
         end
     end
 
-    task.wait(SCAN_INTERVAL)
+    if #validChests > 0 then
+        -- PICK ONE RANDOM CHEST
+        local randomChest = validChests[math.random(1, #validChests)]
+        openChest(randomChest)
+    else
+        task.wait(SCAN_INTERVAL)
+    end
 end
