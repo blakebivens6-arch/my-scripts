@@ -1,40 +1,69 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local WAIT_AT_SAFEZONE = 5    -- Seconds to wait at safezone before next chest
-local SCAN_INTERVAL = 0.5     -- How often to scan for new chests
+local WAIT_AT_SAFEZONE = 5
+local SCAN_INTERVAL = 0.5
+local MAX_CHEST_RUNS = 10  -- after 10 chests, hop server automatically
 
 --------------------------------------------------------
--- PLAYER SETUP
+-- SERVICES
 --------------------------------------------------------
-local player = game.Players.LocalPlayer
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local root = character:WaitForChild("HumanoidRootPart")
 
 --------------------------------------------------------
--- GET ANY VALID PART FROM OBJECT (Part or Model)
+-- SAFE SERVER HOP FUNCTION
 --------------------------------------------------------
-local function getAnyPart(obj)
-    if not obj then return nil end
+local function serverHop()
+    print("Server hopping...")
 
-    if obj:IsA("BasePart") then
-        return obj
-    end
+    local placeId = game.PlaceId
+    local url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
 
-    if obj:IsA("Model") then
-        if obj.PrimaryPart then return obj.PrimaryPart end
-        for _, child in ipairs(obj:GetDescendants()) do
-            if child:IsA("BasePart") then
-                return child
+    local goodServers = {}
+
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(url))
+    end)
+
+    if success and result and result.data then
+        for _, server in ipairs(result.data) do
+            if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                table.insert(goodServers, server.id)
             end
         end
     end
 
-    return nil
+    if #goodServers > 0 then
+        TeleportService:TeleportToPlaceInstance(placeId, goodServers[math.random(1, #goodServers)], player)
+    else
+        TeleportService:Teleport(placeId, player)
+    end
 end
 
 --------------------------------------------------------
--- INSTANT TELEPORT FUNCTION
+-- FIND ANY VALID PART IN MODEL OR PART
+--------------------------------------------------------
+local function getAnyPart(object)
+    if not object then return end
+
+    if object:IsA("BasePart") then return object end
+
+    if object:IsA("Model") then
+        if object.PrimaryPart then return object.PrimaryPart end
+        for _, v in ipairs(object:GetDescendants()) do
+            if v:IsA("BasePart") then return v end
+        end
+    end
+end
+
+--------------------------------------------------------
+-- INSTANT TELEPORT
 --------------------------------------------------------
 local function instantTP(target)
     local part = getAnyPart(target)
@@ -50,62 +79,71 @@ end
 --------------------------------------------------------
 local function deposit()
     local args = {[1]=true,[2]=1}
-    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Bank")
+    local remote = game:GetService("ReplicatedStorage").Remotes.Bank
     remote:InvokeServer(unpack(args))
 end
 
 --------------------------------------------------------
--- OPEN ONE CHEST
+-- OPEN CHEST
 --------------------------------------------------------
 local function openChest(chest, safeZone)
-    local bodyPart = getAnyPart(chest:FindFirstChild("Body"))
+    local body = chest:FindFirstChild("Body")
     local prompt = chest:FindFirstChild("ProximityPrompt")
-    if not (bodyPart and prompt) then return false end
+    if not (body and prompt) then return end
 
-    -- TELEPORT TO CHEST BODY INSTANTLY
-    instantTP(bodyPart)
+    -- TELEPORT TO CHEST
+    instantTP(body)
     task.wait(0.2)
 
-    -- ACTIVATE PROXIMITY PROMPT
+    -- ACTIVATE PROMPT
     pcall(function()
         fireproximityprompt(prompt, 1)
     end)
 
-    -- BANK DEPOSIT
+    -- BANK
     deposit()
 
-    -- TELEPORT TO SAFEZONE INSTANTLY
+    -- TELEPORT TO SAFEZONE
     instantTP(safeZone)
     task.wait(WAIT_AT_SAFEZONE)
-
-    return true
 end
 
 --------------------------------------------------------
--- MAIN LOOP: RANDOM CHEST COLLECTOR
+-- MAIN LOOP
 --------------------------------------------------------
-local safeZone = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
+local safeZone = workspace.Map.PrairieVillage.Statue
 
-while true do
+local chestRuns = 0
+
+while task.wait() do
     local chestFolder = workspace:FindFirstChild("Chests")
     if not chestFolder then
         task.wait(SCAN_INTERVAL)
         continue
     end
 
-    -- Collect all valid chests
-    local validChests = {}
+    local chests = {}
     for _, chest in ipairs(chestFolder:GetChildren()) do
         if chest:FindFirstChild("Body") and chest:FindFirstChild("ProximityPrompt") then
-            table.insert(validChests, chest)
+            table.insert(chests, chest)
         end
     end
 
-    if #validChests > 0 then
-        -- PICK RANDOM CHEST
-        local randomChest = validChests[math.random(1, #validChests)]
-        openChest(randomChest, safeZone)
-    else
-        task.wait(SCAN_INTERVAL)
+    if #chests == 0 then
+        print("No chests left — hopping server.")
+        serverHop()
+        break
+    end
+
+    -- PICK RANDOM CHEST
+    local chosen = chests[math.random(1, #chests)]
+    openChest(chosen, safeZone)
+
+    chestRuns += 1
+
+    if chestRuns >= MAX_CHEST_RUNS then
+        print("Max chest runs reached — hopping server.")
+        serverHop()
+        break
     end
 end
