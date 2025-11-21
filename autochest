@@ -6,6 +6,7 @@ local SCAN_INTERVAL = 0.5      -- How often to scan for chests
 local MAX_CHEST_RUNS = 10      -- Server hop after this many chests
 local SAVE_LOAD_REPEAT = 2     -- Number of times to run LoadData
 local SAVE_LOAD_WAIT = 5       -- Seconds to wait between LoadData calls
+local POST_LOAD_WAIT = 10      -- Seconds to wait after remote fires before starting farm
 
 --------------------------------------------------------
 -- SERVICES
@@ -66,39 +67,35 @@ local function loadSaveData()
 end
 
 --------------------------------------------------------
--- CHECK GAME LOADED
+-- WAIT FOR GAME SIGNAL
 --------------------------------------------------------
-local function gameSignalsReady()
-    local success = false
-    pcall(function()
-        local settings = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Settings")
-        settings:FireServer()
-        success = true
-    end)
-    if success then return true end
-
-    pcall(function()
-        local block = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Block")
-        local args = {[1]=false}
-        block:FireServer(unpack(args))
-        success = true
-    end)
-    return success
-end
-
-local function checkLoaded()
-    print("Waiting for game and player to load...")
+local function waitForGameLoadSignal()
+    print("Waiting for game load signal (Settings or Block remote)...")
     while true do
-        local chestFolder = Workspace:FindFirstChild("Chests")
-        local hrpReady = root and root.Parent and root:IsDescendantOf(Workspace)
-        local signals = gameSignalsReady()
+        local success = false
 
-        if chestFolder and hrpReady and signals then
-            print("✅ Game and player fully loaded.")
-            break
-        end
+        -- Try Settings remote
+        pcall(function()
+            local settings = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Settings")
+            settings:FireServer()
+            success = true
+        end)
+        if success then break end
+
+        -- Try Block remote
+        pcall(function()
+            local block = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Block")
+            local args = {[1]=false}
+            block:FireServer(unpack(args))
+            success = true
+        end)
+        if success then break end
+
         task.wait(0.5)
     end
+
+    print("✅ Game load signal detected. Waiting " .. POST_LOAD_WAIT .. " seconds for replication...")
+    task.wait(POST_LOAD_WAIT)
 end
 
 --------------------------------------------------------
@@ -172,7 +169,6 @@ local function startChestLoop()
             continue
         end
 
-        -- Only chests that have Body + ProximityPrompt
         local chests = {}
         for _, chest in ipairs(chestFolder:GetChildren()) do
             if chest:FindFirstChild("Body") and chest:FindFirstChild("ProximityPrompt") then
@@ -181,7 +177,6 @@ local function startChestLoop()
         end
 
         if #chests == 0 then
-            -- No chests ready, wait a bit and retry
             task.wait(SCAN_INTERVAL)
             continue
         end
@@ -196,13 +191,14 @@ local function startChestLoop()
             break
         end
 
-        task.wait(0.1) -- tiny delay to avoid rapid loop
+        task.wait(0.1)
     end
 end
 
 --------------------------------------------------------
 -- SCRIPT EXECUTION
 --------------------------------------------------------
-loadSaveData()    -- Load save data first
-checkLoaded()     -- Wait until game + player + chests are fully ready
-startChestLoop()  -- Begin chest farming immediately
+loadSaveData()             -- Run save data first
+waitForGameLoadSignal()    -- Wait until one remote fires + 10 seconds
+teleportToSafeZone()       -- Teleport to SafeZone before starting farm
+startChestLoop()           -- Start chest farming immediately
