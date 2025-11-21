@@ -1,11 +1,12 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local WAIT_AT_SAFEZONE = 5    -- Seconds to wait at safezone before next chest
+local SAFEZONE_WAIT = 5       -- Seconds to wait at SafeZone after chest
+local PRELOAD_WAIT = 15       -- Seconds to wait after loading save data
 local SCAN_INTERVAL = 0.5     -- How often to scan for new chests
 local MAX_CHEST_RUNS = 10     -- Server hop after this many chests
 local SAVE_LOAD_REPEAT = 2    -- Number of times to run LoadData
-local SAVE_LOAD_WAIT = 5      -- Seconds to wait after LoadData
+local SAVE_LOAD_WAIT = 5      -- Seconds to wait between LoadData calls
 
 --------------------------------------------------------
 -- SERVICES
@@ -59,16 +60,15 @@ local function loadSaveData()
         pcall(function()
             remote:InvokeServer(unpack(args))
         end)
-        task.wait(0.5)
+        task.wait(SAVE_LOAD_WAIT)
     end
-    task.wait(SAVE_LOAD_WAIT)
 end
 
 --------------------------------------------------------
 -- GET ANY PART FROM MODEL OR PART
 --------------------------------------------------------
 local function getAnyPart(obj)
-    if not obj then return end
+    if not obj then return nil end
     if obj:IsA("BasePart") then return obj end
     if obj:IsA("Model") then
         if obj.PrimaryPart then return obj.PrimaryPart end
@@ -117,7 +117,7 @@ local function openChest(chest, safeZone)
     deposit()
 
     instantTP(safeZone)
-    task.wait(WAIT_AT_SAFEZONE)
+    task.wait(SAFEZONE_WAIT)
 end
 
 --------------------------------------------------------
@@ -162,8 +162,11 @@ end
 --------------------------------------------------------
 -- SCRIPT EXECUTION
 --------------------------------------------------------
--- Immediately load save data when script runs
+-- 1️⃣ Immediately load save data
 loadSaveData()
 
--- Start the chest farming loop
+-- 2️⃣ Wait 15 seconds before starting chest loop
+task.wait(PRELOAD_WAIT)
+
+-- 3️⃣ Start the chest farming loop
 startChestLoop()
