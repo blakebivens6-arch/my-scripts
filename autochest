@@ -1,24 +1,28 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local SAFEZONE_WAIT = 5       -- Wait at SafeZone after each chest
-local PRELOAD_WAIT = 25       -- Wait after loading save data before chest loop
-local SCAN_INTERVAL = 0.5     -- How often to scan for chests
-local MAX_CHEST_RUNS = 10     -- Server hop after this many chests
-local SAVE_LOAD_REPEAT = 2    -- Number of times to run LoadData
-local SAVE_LOAD_WAIT = 5      -- Seconds to wait between LoadData calls
+local SAFEZONE_WAIT = 5           -- Wait at SafeZone after each chest
+local SCAN_INTERVAL = 0.5         -- How often to scan for chests
+local MAX_CHEST_RUNS = 10         -- Server hop after this many chests
+local SAVE_LOAD_REPEAT = 2        -- Number of times to run LoadData
+local SAVE_LOAD_WAIT = 5          -- Seconds to wait between LoadData calls
+local LOAD_CHECK_TIME = 3         -- Seconds player must remain at SafeZone
+local CAMERA_CHECK_INTERVAL = 0.5 -- Interval to check camera
 
 --------------------------------------------------------
 -- SERVICES
 --------------------------------------------------------
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local root = character:WaitForChild("HumanoidRootPart")
+local cam = workspace.CurrentCamera
 
 --------------------------------------------------------
 -- SAFEZONE
@@ -41,6 +45,54 @@ local function teleportToSafeZone()
     if part then
         root.CFrame = part.CFrame
     end
+end
+
+--------------------------------------------------------
+-- LOAD SAVE DATA
+--------------------------------------------------------
+local function loadSaveData()
+    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("LoadData")
+    local args = {[1] = 2}
+
+    for i = 1, SAVE_LOAD_REPEAT do
+        pcall(function()
+            remote:InvokeServer(unpack(args))
+        end)
+        task.wait(SAVE_LOAD_WAIT)
+    end
+end
+
+--------------------------------------------------------
+-- CHECK LOADED FUNCTION
+--------------------------------------------------------
+local function checkLoaded()
+    local part = getAnyPart(safeZone)
+    if not part then return end
+
+    teleportToSafeZone()
+    task.wait(0.5) -- let physics settle
+
+    local stableTime = 0
+    local lastPos = root.Position
+
+    while stableTime < LOAD_CHECK_TIME do
+        task.wait(CAMERA_CHECK_INTERVAL)
+
+        local dist = (root.Position - lastPos).Magnitude
+        local camPosValid = cam.CFrame.Position.Y > 0 -- simple check, can adjust
+
+        if dist > 0.5 or not camPosValid then
+            -- player moved or camera not valid, reset counter
+            stableTime = 0
+            teleportToSafeZone()
+        else
+            stableTime = stableTime + CAMERA_CHECK_INTERVAL
+        end
+
+        lastPos = root.Position
+    end
+
+    print("Load check passed. Player and camera stable at SafeZone.")
 end
 
 --------------------------------------------------------
@@ -69,21 +121,6 @@ local function serverHop()
         TeleportService:TeleportToPlaceInstance(placeId, goodServers[math.random(1,#goodServers)], player)
     else
         TeleportService:Teleport(placeId, player)
-    end
-end
-
---------------------------------------------------------
--- LOAD SAVE DATA
---------------------------------------------------------
-local function loadSaveData()
-    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("LoadData")
-    local args = {[1] = 2}
-
-    for i = 1, SAVE_LOAD_REPEAT do
-        pcall(function()
-            remote:InvokeServer(unpack(args))
-        end)
-        task.wait(SAVE_LOAD_WAIT)
     end
 end
 
@@ -169,14 +206,11 @@ end
 --------------------------------------------------------
 -- SCRIPT EXECUTION
 --------------------------------------------------------
--- 1️⃣ Load save data immediately
+-- 1️⃣ Load save data
 loadSaveData()
 
--- 2️⃣ Wait 15 seconds before starting chest farm
-task.wait(PRELOAD_WAIT)
+-- 2️⃣ Wait until player & camera are stable at SafeZone
+checkLoaded()
 
--- 3️⃣ Teleport to SafeZone to ensure correct start
-teleportToSafeZone()
-
--- 4️⃣ Start chest farming loop
+-- 3️⃣ Start chest farming loop
 startChestLoop()
