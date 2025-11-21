@@ -1,72 +1,120 @@
-local TP_DELAY = 5 -- wait 5 seconds BETWEEN teleports
+--------------------------------------------------------
+-- SETTINGS
+--------------------------------------------------------
+local WAIT_BETWEEN_CHESTS = 5     -- 5 seconds between TELEPORTS
+local SCAN_INTERVAL = 0.5         -- How often we re-scan for new chests
 
+--------------------------------------------------------
+-- PLAYER SETUP
+--------------------------------------------------------
 local player = game.Players.LocalPlayer
-local char = player.Character or player.CharacterAdded:Wait()
-local root = char:WaitForChild("HumanoidRootPart")
+local character = player.Character or player.CharacterAdded:Wait()
+local root = character:WaitForChild("HumanoidRootPart")
 
--- Smooth anti-cheat friendly teleport
-local function safeTP(targetCF)
-    local start = root.CFrame.Position
-    local finish = targetCF.Position
-    local steps = 10
-    local delta = (finish - start) / steps
+--------------------------------------------------------
+-- SAFE TELEPORT (ANTI-KICK)
+--------------------------------------------------------
+local function safeTP(cf)
+    local startPos = root.Position
+    local endPos = cf.Position
+    local steps = 15
+    local delta = (endPos - startPos) / steps
 
     for i = 1, steps do
-        root.CFrame = CFrame.new(start + delta * i)
+        root.CFrame = CFrame.new(startPos + delta * i)
         task.wait(0.05)
     end
 end
 
--- Find a real part inside Body (Body might be a model)
+--------------------------------------------------------
+-- GET REAL PART (IF Body IS A MODEL)
+--------------------------------------------------------
 local function getBodyPart(body)
     if not body then return nil end
-    if body:IsA("BasePart") then return body end
+
+    if body:IsA("BasePart") then
+        return body
+    end
+
     if body:IsA("Model") then
-        if body.PrimaryPart then return body.PrimaryPart end
-        for _, c in ipairs(body:GetChildren()) do
-            if c:IsA("BasePart") then
-                return c
+        if body.PrimaryPart then
+            return body.PrimaryPart
+        end
+        for _, obj in ipairs(body:GetChildren()) do
+            if obj:IsA("BasePart") then
+                return obj
             end
         end
     end
+
     return nil
 end
 
--- Remote deposit function
-local function bank()
+--------------------------------------------------------
+-- RUN BANK REMOTE
+--------------------------------------------------------
+local function deposit()
     local args = {
         [1] = true,
         [2] = 1
     }
-    game.ReplicatedStorage.Remotes.Bank:InvokeServer(unpack(args))
+    local remote = game.ReplicatedStorage.Remotes.Bank
+    remote:InvokeServer(unpack(args))
 end
 
--- MAIN LOOP
-while task.wait(0.5) do
+--------------------------------------------------------
+-- OPEN ONE CHEST (TP → PROMPT → BANK → WAIT)
+--------------------------------------------------------
+local function openChest(chest)
+    local body = getBodyPart(chest:FindFirstChild("Body"))
+    local prompt = chest:FindFirstChild("ProximityPrompt")
+
+    if not (body and prompt) then
+        return false
+    end
+
+    ----------------------------------------------------
+    -- TELEPORT EXACTLY ONTO BODY (ONE TP ONLY)
+    ----------------------------------------------------
+    safeTP(body.CFrame)
+
+    task.wait(0.2)
+
+    ----------------------------------------------------
+    -- ACTIVATE PROXIMITY PROMPT
+    ----------------------------------------------------
+    pcall(function()
+        fireproximityprompt(prompt, 1)
+    end)
+
+    ----------------------------------------------------
+    -- DEPOSIT
+    ----------------------------------------------------
+    deposit()
+
+    ----------------------------------------------------
+    -- WAIT 5 SECONDS BEFORE THE NEXT CHEST
+    ----------------------------------------------------
+    task.wait(WAIT_BETWEEN_CHESTS)
+
+    return true
+end
+
+--------------------------------------------------------
+-- MAIN LOOP (ONE CHEST → WAIT → NEXT)
+--------------------------------------------------------
+while true do
     local chestFolder = workspace:FindFirstChild("Chests")
-    if not chestFolder then continue end
 
-    -- Get all chests
-    local chestList = chestFolder:GetChildren()
+    if chestFolder then
+        local chestList = chestFolder:GetChildren()
 
-    -- Loop every chest ONE BY ONE
-    for _, chest in ipairs(chestList) do
-        local body = getBodyPart(chest:FindFirstChild("Body"))
-        local prompt = chest:FindFirstChild("ProximityPrompt")
-
-        if body and prompt then
-            
-            -- 🔥 EXACTLY ONE TELEPORT
-            safeTP(body.CFrame)
-
-            -- 🔥 ACTIVATE THE PROXIMITY PROMPT
-            fireproximityprompt(prompt, 1)
-
-            -- 🔥 RUN YOUR BANK REMOTE
-            bank()
-
-            -- 🔥 WAIT 5 SECONDS BEFORE NEXT CHEST
-            task.wait(TP_DELAY)
+        for _, chest in ipairs(chestList) do
+            if chest:FindFirstChild("Body") and chest:FindFirstChild("ProximityPrompt") then
+                openChest(chest)   -- << ONE CHEST ONLY
+            end
         end
     end
+
+    task.wait(SCAN_INTERVAL)
 end
