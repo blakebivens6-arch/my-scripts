@@ -1,0 +1,72 @@
+local TP_DELAY = 5 -- wait 5 seconds BETWEEN teleports
+
+local player = game.Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local root = char:WaitForChild("HumanoidRootPart")
+
+-- Smooth anti-cheat friendly teleport
+local function safeTP(targetCF)
+    local start = root.CFrame.Position
+    local finish = targetCF.Position
+    local steps = 10
+    local delta = (finish - start) / steps
+
+    for i = 1, steps do
+        root.CFrame = CFrame.new(start + delta * i)
+        task.wait(0.05)
+    end
+end
+
+-- Find a real part inside Body (Body might be a model)
+local function getBodyPart(body)
+    if not body then return nil end
+    if body:IsA("BasePart") then return body end
+    if body:IsA("Model") then
+        if body.PrimaryPart then return body.PrimaryPart end
+        for _, c in ipairs(body:GetChildren()) do
+            if c:IsA("BasePart") then
+                return c
+            end
+        end
+    end
+    return nil
+end
+
+-- Remote deposit function
+local function bank()
+    local args = {
+        [1] = true,
+        [2] = 1
+    }
+    game.ReplicatedStorage.Remotes.Bank:InvokeServer(unpack(args))
+end
+
+-- MAIN LOOP
+while task.wait(0.5) do
+    local chestFolder = workspace:FindFirstChild("Chests")
+    if not chestFolder then continue end
+
+    -- Get all chests
+    local chestList = chestFolder:GetChildren()
+
+    -- Loop every chest ONE BY ONE
+    for _, chest in ipairs(chestList) do
+        local body = getBodyPart(chest:FindFirstChild("Body"))
+        local prompt = chest:FindFirstChild("ProximityPrompt")
+
+        if body and prompt then
+            
+            -- 🔥 EXACTLY ONE TELEPORT
+            safeTP(body.CFrame)
+
+            -- 🔥 ACTIVATE THE PROXIMITY PROMPT
+            fireproximityprompt(prompt, 1)
+
+            -- 🔥 RUN YOUR BANK REMOTE
+            bank()
+
+            -- 🔥 WAIT 5 SECONDS BEFORE NEXT CHEST
+            task.wait(TP_DELAY)
+        end
+    end
+end
