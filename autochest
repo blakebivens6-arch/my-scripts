@@ -2,7 +2,7 @@
 -- SETTINGS
 --------------------------------------------------------
 local WAIT_AT_SAFEZONE = 5    -- Seconds to wait at safezone before next chest
-local SCAN_INTERVAL = 0.5     -- Time between scanning for new chests
+local SCAN_INTERVAL = 0.5     -- How often to scan for new chests
 
 --------------------------------------------------------
 -- PLAYER SETUP
@@ -15,18 +15,10 @@ local root = character:WaitForChild("HumanoidRootPart")
 -- ROBUST SAFE TELEPORT FUNCTION
 --------------------------------------------------------
 local function safeTP(target)
-    -- target can be a CFrame or any BasePart
-    local targetCF
-    if typeof(target) == "Instance" and target:IsA("BasePart") then
-        targetCF = target.CFrame
-    elseif typeof(target) == "CFrame" then
-        targetCF = target
-    else
-        return false -- invalid target
-    end
-
+    -- target can be a BasePart
+    if not target or not target:IsA("BasePart") then return false end
     local startPos = root.Position
-    local endPos = targetCF.Position
+    local endPos = target.Position
     local steps = 12
     local delta = (endPos - startPos) / steps
 
@@ -44,7 +36,9 @@ end
 local function getAnyPart(obj)
     if not obj then return nil end
 
-    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("BasePart") then
+        return obj
+    end
 
     if obj:IsA("Model") then
         if obj.PrimaryPart then return obj.PrimaryPart end
