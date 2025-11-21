@@ -12,25 +12,6 @@ local character = player.Character or player.CharacterAdded:Wait()
 local root = character:WaitForChild("HumanoidRootPart")
 
 --------------------------------------------------------
--- ROBUST SAFE TELEPORT FUNCTION
---------------------------------------------------------
-local function safeTP(target)
-    -- target can be a BasePart
-    if not target or not target:IsA("BasePart") then return false end
-    local startPos = root.Position
-    local endPos = target.Position
-    local steps = 12
-    local delta = (endPos - startPos) / steps
-
-    for i = 1, steps do
-        root.CFrame = CFrame.new(startPos + delta * i)
-        task.wait(0.05)
-    end
-
-    return true
-end
-
---------------------------------------------------------
 -- GET ANY VALID PART FROM OBJECT (Part or Model)
 --------------------------------------------------------
 local function getAnyPart(obj)
@@ -53,6 +34,18 @@ local function getAnyPart(obj)
 end
 
 --------------------------------------------------------
+-- INSTANT TELEPORT FUNCTION
+--------------------------------------------------------
+local function instantTP(target)
+    local part = getAnyPart(target)
+    if part then
+        root.CFrame = part.CFrame
+        return true
+    end
+    return false
+end
+
+--------------------------------------------------------
 -- BANK REMOTE
 --------------------------------------------------------
 local function deposit()
@@ -69,8 +62,8 @@ local function openChest(chest, safeZone)
     local prompt = chest:FindFirstChild("ProximityPrompt")
     if not (bodyPart and prompt) then return false end
 
-    -- TELEPORT TO CHEST BODY
-    safeTP(bodyPart)
+    -- TELEPORT TO CHEST BODY INSTANTLY
+    instantTP(bodyPart)
     task.wait(0.2)
 
     -- ACTIVATE PROXIMITY PROMPT
@@ -81,12 +74,9 @@ local function openChest(chest, safeZone)
     -- BANK DEPOSIT
     deposit()
 
-    -- TELEPORT TO SAFEZONE
-    local safePart = getAnyPart(safeZone)
-    if safePart then
-        safeTP(safePart)
-        task.wait(WAIT_AT_SAFEZONE)
-    end
+    -- TELEPORT TO SAFEZONE INSTANTLY
+    instantTP(safeZone)
+    task.wait(WAIT_AT_SAFEZONE)
 
     return true
 end
