@@ -24,7 +24,7 @@ local root = character:WaitForChild("HumanoidRootPart")
 local safeZone = Workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
 
 --------------------------------------------------------
--- HELPER FUNCTIONS
+-- HELPERS
 --------------------------------------------------------
 local function getAnyPart(obj)
     if not obj then return nil end
@@ -165,13 +165,14 @@ end
 local function startChestLoop()
     local chestRuns = 0
 
-    while task.wait() do
+    while true do
         local chestFolder = Workspace:FindFirstChild("Chests")
         if not chestFolder then
             task.wait(SCAN_INTERVAL)
             continue
         end
 
+        -- Only chests that have Body + ProximityPrompt
         local chests = {}
         for _, chest in ipairs(chestFolder:GetChildren()) do
             if chest:FindFirstChild("Body") and chest:FindFirstChild("ProximityPrompt") then
@@ -180,9 +181,9 @@ local function startChestLoop()
         end
 
         if #chests == 0 then
-            print("No chests found — hopping server.")
-            serverHop()
-            break
+            -- No chests ready, wait a bit and retry
+            task.wait(SCAN_INTERVAL)
+            continue
         end
 
         local chosen = chests[math.random(1,#chests)]
@@ -190,16 +191,18 @@ local function startChestLoop()
 
         chestRuns += 1
         if chestRuns >= MAX_CHEST_RUNS then
-            print("Max chest runs reached — hopping server.")
+            print("Max chest runs reached — server hopping.")
             serverHop()
             break
         end
+
+        task.wait(0.1) -- tiny delay to avoid rapid loop
     end
 end
 
 --------------------------------------------------------
 -- SCRIPT EXECUTION
 --------------------------------------------------------
-loadSaveData()   -- Load save data
-checkLoaded()    -- Wait until game + player + chests are fully ready
-startChestLoop() -- Start chest farming immediately
+loadSaveData()    -- Load save data first
+checkLoaded()     -- Wait until game + player + chests are fully ready
+startChestLoop()  -- Begin chest farming immediately
