@@ -1,8 +1,8 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local WAIT_BETWEEN_CHESTS = 5  -- Time in seconds between teleports
-local SCAN_INTERVAL = 0.5      -- Time between chest folder scans
+local WAIT_BETWEEN_CHESTS = 5  -- Wait at safe zone before next chest
+local SCAN_INTERVAL = 0.5      -- How often to scan chests
 
 --------------------------------------------------------
 -- PLAYER SETUP
@@ -31,20 +31,13 @@ end
 --------------------------------------------------------
 local function getBodyPart(body)
     if not body then return nil end
-
-    if body:IsA("BasePart") then
-        return body
-    end
-
+    if body:IsA("BasePart") then return body end
     if body:IsA("Model") then
         if body.PrimaryPart then return body.PrimaryPart end
         for _, obj in ipairs(body:GetChildren()) do
-            if obj:IsA("BasePart") then
-                return obj
-            end
+            if obj:IsA("BasePart") then return obj end
         end
     end
-
     return nil
 end
 
@@ -67,31 +60,32 @@ local function openChest(chest)
     local body = getBodyPart(chest:FindFirstChild("Body"))
     local prompt = chest:FindFirstChild("ProximityPrompt")
 
-    if not (body and prompt) then
-        return false
-    end
+    if not (body and prompt) then return false end
 
-    -- ONE TELEPORT directly to the body
+    -- TELEPORT TO CHEST BODY
     safeTP(body.CFrame)
+    task.wait(0.2)
 
-    task.wait(0.2) -- small buffer before prompt
-
-    -- ACTIVATE THE PROXIMITY PROMPT
+    -- ACTIVATE PROXIMITY PROMPT
     pcall(function()
         fireproximityprompt(prompt, 1)
     end)
 
-    -- DEPOSIT TO BANK
+    -- DEPOSIT
     deposit()
 
-    -- WAIT BEFORE NEXT TELEPORT
+    -- TELEPORT TO SAFEZONE
+    local safeZonePart = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
+    safeTP(safeZonePart.CFrame)
+
+    -- WAIT 5 SECONDS BEFORE NEXT CHEST
     task.wait(WAIT_BETWEEN_CHESTS)
 
     return true
 end
 
 --------------------------------------------------------
--- MAIN LOOP: RANDOM CHEST EACH ITERATION
+-- MAIN LOOP: RANDOM CHEST
 --------------------------------------------------------
 while true do
     local chestFolder = workspace:FindFirstChild("Chests")
@@ -109,7 +103,7 @@ while true do
     end
 
     if #validChests > 0 then
-        -- PICK ONE RANDOM CHEST
+        -- PICK RANDOM CHEST
         local randomChest = validChests[math.random(1, #validChests)]
         openChest(randomChest)
     else
