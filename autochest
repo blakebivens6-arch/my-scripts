@@ -15,15 +15,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local Workspace = game:GetService("Workspace")
+local task = task
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local root = character:WaitForChild("HumanoidRootPart")
 
-local safeZone = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
+local safeZone = Workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
 
 --------------------------------------------------------
--- HELPERS
+-- HELPER FUNCTIONS
 --------------------------------------------------------
 local function getAnyPart(obj)
     if not obj then return nil end
@@ -67,30 +68,37 @@ end
 --------------------------------------------------------
 -- CHECK GAME LOADED
 --------------------------------------------------------
+local function gameSignalsReady()
+    local success = false
+    pcall(function()
+        local settings = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Settings")
+        settings:FireServer()
+        success = true
+    end)
+    if success then return true end
+
+    pcall(function()
+        local block = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Block")
+        local args = {[1]=false}
+        block:FireServer(unpack(args))
+        success = true
+    end)
+    return success
+end
+
 local function checkLoaded()
+    print("Waiting for game and player to load...")
     while true do
-        local success = false
-        -- Try Settings remote
-        pcall(function()
-            local settings = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Settings")
-            settings:FireServer()
-            success = true
-        end)
-        if success then break end
+        local chestFolder = Workspace:FindFirstChild("Chests")
+        local hrpReady = root and root.Parent and root:IsDescendantOf(Workspace)
+        local signals = gameSignalsReady()
 
-        -- Try Block remote
-        pcall(function()
-            local block = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Block")
-            local args = {[1] = false}
-            block:FireServer(unpack(args))
-            success = true
-        end)
-        if success then break end
-
-        task.wait(0.5) -- retry interval
+        if chestFolder and hrpReady and signals then
+            print("✅ Game and player fully loaded.")
+            break
+        end
+        task.wait(0.5)
     end
-
-    print("✅ Game loaded detected. Starting chest farm...")
 end
 
 --------------------------------------------------------
@@ -158,7 +166,7 @@ local function startChestLoop()
     local chestRuns = 0
 
     while task.wait() do
-        local chestFolder = workspace:FindFirstChild("Chests")
+        local chestFolder = Workspace:FindFirstChild("Chests")
         if not chestFolder then
             task.wait(SCAN_INTERVAL)
             continue
@@ -192,6 +200,6 @@ end
 --------------------------------------------------------
 -- SCRIPT EXECUTION
 --------------------------------------------------------
-loadSaveData()   -- Load player save data
-checkLoaded()    -- Wait until game is loaded (either remote works)
-startChestLoop() -- Begin farming chests
+loadSaveData()   -- Load save data
+checkLoaded()    -- Wait until game + player + chests are fully ready
+startChestLoop() -- Start chest farming immediately
