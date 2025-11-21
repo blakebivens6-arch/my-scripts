@@ -59,7 +59,7 @@ local function loadSaveData()
         pcall(function()
             remote:InvokeServer(unpack(args))
         end)
-        task.wait(0.5) -- tiny buffer between calls
+        task.wait(0.5)
     end
     task.wait(SAVE_LOAD_WAIT)
 end
@@ -68,7 +68,7 @@ end
 -- GET ANY PART FROM MODEL OR PART
 --------------------------------------------------------
 local function getAnyPart(obj)
-    if not obj then return nil end
+    if not obj then return end
     if obj:IsA("BasePart") then return obj end
     if obj:IsA("Model") then
         if obj.PrimaryPart then return obj.PrimaryPart end
@@ -160,7 +160,10 @@ local function startChestLoop()
 end
 
 --------------------------------------------------------
--- AUTO EXECUTION ENTRY
+-- SCRIPT EXECUTION
 --------------------------------------------------------
+-- Immediately load save data when script runs
 loadSaveData()
+
+-- Start the chest farming loop
 startChestLoop()
