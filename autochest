@@ -1,8 +1,8 @@
 --------------------------------------------------------
 -- SETTINGS
 --------------------------------------------------------
-local WAIT_BETWEEN_CHESTS = 5  -- Wait at safe zone before next chest
-local SCAN_INTERVAL = 0.5      -- How often to scan chests
+local WAIT_AT_SAFEZONE = 5   -- Wait at safezone before next chest
+local SCAN_INTERVAL = 0.5    -- How often to scan chests
 
 --------------------------------------------------------
 -- PLAYER SETUP
@@ -27,17 +27,22 @@ local function safeTP(cf)
 end
 
 --------------------------------------------------------
--- GET REAL PART OF BODY
+-- GET REAL PART OF BODY (PART OR MODEL)
 --------------------------------------------------------
-local function getBodyPart(body)
-    if not body then return nil end
-    if body:IsA("BasePart") then return body end
-    if body:IsA("Model") then
-        if body.PrimaryPart then return body.PrimaryPart end
-        for _, obj in ipairs(body:GetChildren()) do
-            if obj:IsA("BasePart") then return obj end
+local function getRealPart(obj)
+    if not obj then return nil end
+
+    if obj:IsA("BasePart") then return obj end
+
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then return obj.PrimaryPart end
+        for _, child in ipairs(obj:GetChildren()) do
+            if child:IsA("BasePart") then
+                return child
+            end
         end
     end
+
     return nil
 end
 
@@ -45,10 +50,7 @@ end
 -- BANK REMOTE CALL
 --------------------------------------------------------
 local function deposit()
-    local args = {
-        [1] = true,
-        [2] = 1
-    }
+    local args = {[1]=true,[2]=1}
     local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Bank")
     remote:InvokeServer(unpack(args))
 end
@@ -56,8 +58,8 @@ end
 --------------------------------------------------------
 -- OPEN ONE CHEST
 --------------------------------------------------------
-local function openChest(chest)
-    local body = getBodyPart(chest:FindFirstChild("Body"))
+local function openChest(chest, safeZone)
+    local body = getRealPart(chest:FindFirstChild("Body"))
     local prompt = chest:FindFirstChild("ProximityPrompt")
 
     if not (body and prompt) then return false end
@@ -74,12 +76,12 @@ local function openChest(chest)
     -- DEPOSIT
     deposit()
 
-    -- TELEPORT TO SAFEZONE
-    local safeZonePart = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
-    safeTP(safeZonePart.CFrame)
-
-    -- WAIT 5 SECONDS BEFORE NEXT CHEST
-    task.wait(WAIT_BETWEEN_CHESTS)
+    -- TELEPORT TO SAFEZONE (handles Model)
+    local safePart = getRealPart(safeZone)
+    if safePart then
+        safeTP(safePart.CFrame)
+        task.wait(WAIT_AT_SAFEZONE)
+    end
 
     return true
 end
@@ -87,6 +89,9 @@ end
 --------------------------------------------------------
 -- MAIN LOOP: RANDOM CHEST
 --------------------------------------------------------
+-- SafeZone reference
+local safeZoneModel = workspace:WaitForChild("Map"):WaitForChild("PrairieVillage"):WaitForChild("Statue")
+
 while true do
     local chestFolder = workspace:FindFirstChild("Chests")
     if not chestFolder then
@@ -94,7 +99,7 @@ while true do
         continue
     end
 
-    -- Collect all valid chests
+    -- Collect valid chests
     local validChests = {}
     for _, chest in ipairs(chestFolder:GetChildren()) do
         if chest:FindFirstChild("Body") and chest:FindFirstChild("ProximityPrompt") then
@@ -105,7 +110,7 @@ while true do
     if #validChests > 0 then
         -- PICK RANDOM CHEST
         local randomChest = validChests[math.random(1, #validChests)]
-        openChest(randomChest)
+        openChest(randomChest, safeZoneModel)
     else
         task.wait(SCAN_INTERVAL)
     end
